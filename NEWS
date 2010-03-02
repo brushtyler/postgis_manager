@@ -1,6 +1,10 @@
 PostGIS Manager - NEWS
 ----------------------
 
+v0.5.9 ** 2.3.2010
+
+- select to show either all or only readable tables/views (Giuseppe Sucameli - work done for Regione Toscana - RT-SIGTA)
+
 v0.5.8 ** 6.2.2010
 
 - fixed geometry processing trigger function
