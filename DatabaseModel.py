@@ -52,7 +52,7 @@ class DatabaseItem(TreeItem):
 	def data(self, column):
 		return None
 
-	def constructTreeFromDb(self, db):
+	def constructTreeFromDb(self, db, onlyReadable):
 		""" creates a tree of schemas and tables from current DB connection """
 		
 		self.tableCount = 0
@@ -82,6 +82,12 @@ class DatabaseItem(TreeItem):
 		# add all tables
 		for tbl in list_tables:
 			tablename, schema, reltype, relowner, row_count, page_count, geom_col, geom_type, geom_dim, geom_srid = tbl
+			
+			# check permissions
+			priv = db.get_table_privileges(tablename, schema_name)
+			if onlyReadable and not priv[0]:
+				continue
+			
 			is_view = (reltype == 'v')
 			tableItem = TableItem(tablename, relowner, row_count, page_count, is_view, geom_type, geom_col, geom_dim, geom_srid, schemas[schema])
 			
@@ -171,10 +177,10 @@ class DatabaseModel(QAbstractItemModel):
 		
 		self.tree = DatabaseItem()
 		
-	def loadFromDb(self, db):
+	def loadFromDb(self, db, onlyReadable = False):
 		self.db = db
 		self.tree = DatabaseItem()
-		self.tree.constructTreeFromDb(self.db)
+		self.tree.constructTreeFromDb(self.db, onlyReadable)
 
 		
 	def columnCount(self, parent):

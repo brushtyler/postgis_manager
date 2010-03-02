@@ -239,9 +239,9 @@ class ManagerWindow(QMainWindow):
 	def refreshTable(self):
 		
 		model = self.tree.model()
-		model.loadFromDb(self.db)
+		model.loadFromDb(self.db, self.actionShowReadable.isChecked())
 		model.reset()
-		
+				
 		# only expand when there are not too many tables
 		if model.tree.tableCount < 20:
 			self.tree.expandAll()
@@ -724,6 +724,10 @@ class ManagerWindow(QMainWindow):
 		self.menuTable.addSeparator()
 		actionEmptyTable = self.menuTable.addAction("E&mpty table", self.emptyTable)
 		actionDeleteTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_del_table.png"),"&Delete table/view", self.deleteTable)
+		self.menuTable.addSeparator()
+		self.actionShowReadable = self.menuTable.addAction("Show only readable tables/views", self.refreshTable)
+		self.actionShowReadable.setCheckable(True)
+		self.actionShowReadable.setChecked(True)
 		
 		## MENU Data
 		actionLoadData = self.menuData.addAction("&Load data from shapefile", self.loadData)
