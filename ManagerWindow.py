@@ -129,7 +129,9 @@ class ManagerWindow(QMainWindow):
 		get_value_str = lambda x: unicode(settings.value(x).toString())
 		host, database, username, password = map(get_value_str, ["host", "database", "username", "password"])
 		port = settings.value("port").toInt()[0]
-		if not settings.value("save").toBool():
+
+		# qgis1.5 use 'savePassword' instead of 'save' setting
+		if not ( settings.value("save").toBool() or settings.value("savePassword").toBool() ):
 			(password, ok) = QInputDialog.getText(self, "Enter password", "Enter password for connection \"%s\":" % selected, QLineEdit.Password)
 			if not ok: return
 		settings.endGroup()
