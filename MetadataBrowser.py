@@ -8,8 +8,12 @@ class MetadataBrowser(QTextBrowser):
 
 	def __init__(self, parent=None):
 		QTextBrowser.__init__(self, parent)
-		
+
+		self.simplifiedMode = False		
 		self.db = None
+
+	def setSimplifiedMode(self, value=True):
+		self.simplifiedMode = value
 		
 	def setDatabase(self, db):
 		""" called when connected / disconnected from db """
@@ -148,9 +152,11 @@ class MetadataBrowser(QTextBrowser):
 			html += '<p><img src=":/icons/warning-20px.png"> &nbsp; This user has no privileges!</p>'
 		elif has_read_only:
 			html += '<p><img src=":/icons/warning-20px.png"> &nbsp; This user has read-only privileges.</p>'
-		if item.row_count_real != -1 and (item.row_count > 2 * item.row_count_real or item.row_count * 2 < item.row_count_real):
-			html += '<p><img src=":/icons/warning-20px.png"> &nbsp; There\'s a significant difference between estimated and real row count. ' \
-			        'Consider running VACUUM ANALYZE.'
+
+		if not self.simplifiedMode and not item.is_view:
+			if item.row_count_real != -1 and (item.row_count > 2 * item.row_count_real or item.row_count * 2 < item.row_count_real):
+				html += '<p><img src=":/icons/warning-20px.png"> &nbsp; There\'s a significant difference between estimated and real row count. ' \
+				        'Consider running VACUUM ANALYZE.'
 		html += '</div>'
 		
 		
@@ -160,13 +166,16 @@ class MetadataBrowser(QTextBrowser):
 		triggers = self.db.get_table_triggers(table_name, schema_name)
 		rules = self.db.get_table_rules(table_name, schema_name)
 		
-		has_pkey = False
-		for con in constraints:
-				if con.con_type == postgis_utils.TableConstraint.TypePrimaryKey:
-					has_pkey = True
-		if not has_pkey:
-			html += '<div style="margin-top:10px; margin-left:10px;"><img src=":/icons/warning-20px.png"> &nbsp; No primary key defined for this table!</div>'
 		
+		if not self.simplifiedMode and not item.is_view:
+			has_pkey = False
+			for con in constraints:
+					if con.con_type == postgis_utils.TableConstraint.TypePrimaryKey:
+						has_pkey = True
+
+			if not has_pkey:
+				html += '<div style="margin-top:10px; margin-left:10px;"><img src=":/icons/warning-20px.png"> &nbsp; No primary key defined for this table!</div>'
+				
 		html += '<div style="margin-top:30px; margin-left:10px;"><h2>PostGIS</h2>'
 		if item.geom_type:
 			html += '<table><tr><td width=150>Column:<td>%s<tr><td>Geometry:<td>%s' % (item.geom_column, item.geom_type)
@@ -176,30 +185,36 @@ class MetadataBrowser(QTextBrowser):
 				else:
 					sr_info = "Undefined"
 				html += '<tr><td>Dimension:<td>%d<tr><td>Spatial ref:<td>%s (%d)' % (item.geom_dim, sr_info, item.geom_srid)
-			# estimated extent
-			html += '<tr><td>Extent:<td>'
-			try:
-				extent = self.db.get_table_estimated_extent(item.geom_column, table_name, schema_name)
-				if extent[0] is not None:
-					html += '%.5f, %.5f - %.5f, %.5f' % extent
-				else:
+
+			if not self.simplifiedMode and not item.is_view:
+				# estimated extent
+				html += '<tr><td>Extent:<td>'
+				try:
+					extent = self.db.get_table_estimated_extent(item.geom_column, table_name, schema_name)
+					if extent[0] is not None:
+						html += '%.5f, %.5f - %.5f, %.5f' % extent
+					else:
+						html += '(unknown)'
+				except postgis_utils.DbError, e:
 					html += '(unknown)'
-			except postgis_utils.DbError, e:
-				html += '(unknown)'
 			html += '</table>'
+
 			if item.geom_type == 'geometry':
 				html += '<p><img src=":/icons/warning-20px.png"> &nbsp; There isn\'t entry in geometry_columns!</p>'
+
 			# find out geometry's column number
 			for fld in fields:
 				if fld.name == item.geom_column:
 					geom_col_num = fld.num
-			# find out whether it has spatial index on it
-			has_spatial_index = False
-			for idx in indexes:
-				if geom_col_num in idx.columns:
-					has_spatial_index = True
-			if not has_spatial_index:
-				html += '<p><img src=":/icons/warning-20px.png"> &nbsp; No spatial index defined.</p>'
+
+			if not self.simplifiedMode and not item.is_view:
+				# find out whether it has spatial index on it
+				has_spatial_index = False
+				for idx in indexes:
+					if geom_col_num in idx.columns:
+						has_spatial_index = True
+				if not has_spatial_index:
+					html += '<p><img src=":/icons/warning-20px.png"> &nbsp; No spatial index defined.</p>'
 		else:
 			html += '<p>This is not a spatial table.</p>'
 		html += '</div>'
@@ -220,11 +235,11 @@ class MetadataBrowser(QTextBrowser):
 					pk_style = ' style="text-decoration:underline;"'
 					break
 			html += '<tr><td align="center">%s<td%s>%s<td>%s<td align="center">%d<td align="center">%s<td>%s' % (fld.num, pk_style, fld.name, fldtype, fld.char_max_len, is_null_txt, default)
-		html += "</table></div> "
+		html += "&nbsp;</table></div> "
 		
 		# constraints
 		if len(constraints) != 0:
-			html += '<div style=" margin-top:30px; margin-left:10px"><br><h2>Constraints</h2>'
+			html += '<div style=" margin-top:30px; margin-left:10px"><h2>Constraints</h2>'
 			html += '<table><tr bgcolor="#dddddd"><th width="180">Name<th width="100">Type<th width="180">Column(s)'
 			for con in constraints:
 				if   con.con_type == postgis_utils.TableConstraint.TypeCheck:      con_type = "Check"
@@ -236,7 +251,7 @@ class MetadataBrowser(QTextBrowser):
 					if len(keys) != 0: keys += "<br>"
 					keys += self._field_name_by_number(key, fields)
 				html += "<tr><td>%s<td>%s<td>%s" % (con.name, con_type, keys)
-			html += "</table></div>"
+			html += "&nbsp;</table></div>"
 		
 		# indexes
 		if len(indexes) != 0:
@@ -248,7 +263,7 @@ class MetadataBrowser(QTextBrowser):
 					if len(keys) != 0: keys += "<br>"
 					keys += self._field_name_by_number(key, fields)
 				html += "<tr><td>%s<td>%s" % (fld.name, keys)
-			html += "</table></div>"
+			html += "&nbsp;</table></div>"
 			
 		# triggers
 		if len(triggers) != 0:
@@ -267,7 +282,7 @@ class MetadataBrowser(QTextBrowser):
 				else:
 					txt_enabled = 'No (<a href="action:trigger/%s/enable">enable</a>)' % trig.name
 				html += '<tr><td>%s (<a href="action:trigger/%s/delete">delete</a>)<td>%s<td>%s<td>%s' % (trig.name, trig.name, trig.function, trig_type, txt_enabled)
-			html += "</table>"
+			html += "&nbsp;</table>"
 			html += "<a href=\"action:triggers/enable\">Enable all triggers</a> / <a href=\"action:triggers/disable\">Disable all triggers</a>"
 			html += "</div>"
 			
@@ -277,11 +292,11 @@ class MetadataBrowser(QTextBrowser):
 			html += '<table><tr bgcolor="#dddddd"><th width="180">Name<th>Definition'
 			for rule in rules:
 				html += '<tr><td>%s (<a href="action:rule/%s/delete">delete</a>)<td>%s' % (rule.name, rule.name, rule.definition)
-			html += "</table></div>"
+			html += "&nbsp;</table></div>"
 		
 			
 		if item.is_view:
-			html += '<div style=" margin-top:30px; margin-left:10px"><br><h2>View definition</h2>'
+			html += '<div style=" margin-top:30px; margin-left:10px"><h2>View definition</h2>'
 			html += '<p>%s</p>' % self.db.get_view_definition(table_name, schema_name)
 			html += '</div>'
 		

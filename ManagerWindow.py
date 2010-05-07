@@ -35,7 +35,7 @@ class ManagerWindow(QMainWindow):
 	ViewDbInfo, ViewSchema, ViewTable = range(3)
 	ViewNothing = -1
 
-	ModeDefault, ModeReadOnly = range(2)
+	ModeDefault, ModeReadOnly, ModeSimplified = range(3)
 	
 	def __init__(self, use_qgis=False, parent=None, mode=None, iface=None):
 		QMainWindow.__init__(self, parent)
@@ -256,6 +256,14 @@ class ManagerWindow(QMainWindow):
 
 		self.refreshTable()
 
+	def showAllInformations(self):
+		if not self.actionAllInfos.isChecked():
+			self.mode |= self.ModeSimplified
+		else:
+			self.mode &= ~self.ModeSimplified
+
+		self.txtMetadata.setSimplifiedMode(self.mode & self.ModeSimplified)
+		self.updateView()
 		
 	def refreshTable(self):
 		
@@ -750,6 +758,10 @@ class ManagerWindow(QMainWindow):
 		self.actionOnlyReadable = self.menuTable.addAction("Show only readable tables/views", self.showOnlyReadableTables)
 		self.actionOnlyReadable.setCheckable(True)
 		self.actionOnlyReadable.setChecked(True)
+		if self.mode & self.ModeSimplified:
+			self.actionAllInfos = self.menuTable.addAction("Show all informations", self.showAllInformations)
+			self.actionAllInfos.setCheckable(True)
+			self.actionAllInfos.setChecked(False)
 		
 		## MENU Data
 		actionLoadData = self.menuData.addAction("&Load data from shapefile", self.loadData)
@@ -801,4 +813,7 @@ class ManagerWindow(QMainWindow):
 			defModeActions = [ actionCreateTable, actionEditTable, actionVacuumAnalyze,
 				actionEmptyTable, actionDeleteTable, self.menuMoveToSchema ]
 			self.dbActions.extend( defModeActions )
+
+		if self.mode & self.ModeSimplified:
+			self.dbActions.append( self.actionAllInfos )
 		
