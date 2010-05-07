@@ -46,13 +46,14 @@ class TreeItem:
 
 
 class DatabaseItem(TreeItem):
-	def __init__(self, parent=None):
+	def __init__(self, parent=None, showOnlyReadable=False):
 		TreeItem.__init__(self, parent)
+		self.showOnlyReadable = showOnlyReadable
 	
 	def data(self, column):
 		return None
 
-	def constructTreeFromDb(self, db, onlyReadable):
+	def constructTreeFromDb(self, db):
 		""" creates a tree of schemas and tables from current DB connection """
 		
 		self.tableCount = 0
@@ -71,6 +72,13 @@ class DatabaseItem(TreeItem):
 		# add all schemas
 		for schema in list_schemas:
 			schema_oid, schema_name, schema_owner, schema_perms = schema
+
+			# check permissions
+			if self.showOnlyReadable:
+				sPriv = db.get_schema_privileges(schema_name)
+				if not sPriv[1]:
+					continue
+
 			schemas[schema_name] = SchemaItem(schema_name, schema_owner, self)
 			
 		try:
@@ -79,19 +87,25 @@ class DatabaseItem(TreeItem):
 			DlgDbError.showError(e, None)
 			return
 		
+		self.tableCount = 0
 		# add all tables
 		for tbl in list_tables:
 			tablename, schema, reltype, relowner, row_count, page_count, geom_col, geom_type, geom_dim, geom_srid = tbl
 			
 			# check permissions
-			priv = db.get_table_privileges(tablename, schema_name)
-			if onlyReadable and not priv[0]:
-				continue
+			if self.showOnlyReadable:
+				sPriv = db.get_schema_privileges(schema)
+				if not sPriv[1]:
+					continue
+
+				tPriv = db.get_table_privileges(tablename, schema)
+				if not tPriv[0]:
+					continue
 			
 			is_view = (reltype == 'v')
 			tableItem = TableItem(tablename, relowner, row_count, page_count, is_view, geom_type, geom_col, geom_dim, geom_srid, schemas[schema])
-			
-		self.tableCount = len(list_tables)
+
+			self.tableCount += 1
 
 	
 class SchemaItem(TreeItem):
@@ -168,19 +182,27 @@ def new_tree():
 	return rootItem
 
 
-
 class DatabaseModel(QAbstractItemModel):
 	
 	def __init__(self, parent=None):
 		QAbstractItemModel.__init__(self, parent)
+
 		self.header = ['Table']
-		
+		self.readOnlyMode = False
+		self.showOnlyReadable = False
+
 		self.tree = DatabaseItem()
+
+	def setReadOnlyMode(self, value=True):
+		self.readOnlyMode = value
+
+	def showOnlyReadableTables(self, value=True):
+		self.showOnlyReadable = value
 		
-	def loadFromDb(self, db, onlyReadable = False):
+	def loadFromDb(self, db):
 		self.db = db
-		self.tree = DatabaseItem()
-		self.tree.constructTreeFromDb(self.db, onlyReadable)
+		self.tree = DatabaseItem(None, self.showOnlyReadable)
+		self.tree.constructTreeFromDb(self.db)
 
 		
 	def columnCount(self, parent):
@@ -209,7 +231,8 @@ class DatabaseModel(QAbstractItemModel):
 		
 		flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable 
 		if index.column() == 0:
-			flags |= Qt.ItemIsEditable
+			if not self.readOnlyMode:
+				flags |= Qt.ItemIsEditable
 		return flags
 	
 	def headerData(self, section, orientation, role):
@@ -238,7 +261,7 @@ class DatabaseModel(QAbstractItemModel):
 		
 		childItem = index.internalPointer()
 		parentItem = childItem.parent()
-		
+
 		if parentItem == self.tree:
 			return QModelIndex()
 		
@@ -257,6 +280,9 @@ class DatabaseModel(QAbstractItemModel):
 
 	def setData(self, index, value, role):
 		if role != Qt.EditRole or index.column() != 0:
+			return False
+
+		if self.readOnlyMode:
 			return False
 			
 		item = index.internalPointer()

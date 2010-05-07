@@ -34,13 +34,20 @@ class ManagerWindow(QMainWindow):
 	
 	ViewDbInfo, ViewSchema, ViewTable = range(3)
 	ViewNothing = -1
+
+	ModeDefault, ModeReadOnly = range(2)
 	
-	def __init__(self, use_qgis=False, parent=None):
+	def __init__(self, use_qgis=False, parent=None, mode=None, iface=None):
 		QMainWindow.__init__(self, parent)
 		
 		self.useQgis = use_qgis
 		self.currentLayerId = None
 		self.db = None
+
+		if mode == None:
+			mode = self.ModeDefault
+		self.mode = mode
+		self.iface = iface
 		
 		self.setupUi()
 		self.enableGui(False)
@@ -51,7 +58,12 @@ class ManagerWindow(QMainWindow):
 		
 		
 		self.dbModel = DatabaseModel(self)
+		# permit no table edit
+		self.dbModel.setReadOnlyMode(self.mode & self.ModeReadOnly)
+		# show only readable tables
+		self.dbModel.showOnlyReadableTables(self.actionOnlyReadable.isChecked())
 		self.tree.setModel(self.dbModel)
+
 		self.currentItem = (None, None)
 		self.currentView = ManagerWindow.ViewNothing
 		self.currentHasGeometry = False
@@ -74,6 +86,7 @@ class ManagerWindow(QMainWindow):
 		self.dirtyMetadata=False
 		self.dirtyTable=False
 		self.dirtyMap=False
+
 	def closeEvent(self, e):
 		""" save window state """
 		settings = QSettings()
@@ -237,11 +250,17 @@ class ManagerWindow(QMainWindow):
 		
 		self.updateView()
 		
+	def showOnlyReadableTables(self):
+		model = self.tree.model()
+		model.showOnlyReadableTables(self.actionOnlyReadable.isChecked())
 
+		self.refreshTable()
+
+		
 	def refreshTable(self):
 		
 		model = self.tree.model()
-		model.loadFromDb(self.db, self.actionShowReadable.isChecked())
+		model.loadFromDb(self.db)
 		model.reset()
 				
 		# only expand when there are not too many tables
@@ -717,19 +736,20 @@ class ManagerWindow(QMainWindow):
 		actionDeleteSchema = self.menuSchema.addAction("&Delete (empty) schema", self.deleteSchema)
 		
 		## MENU Table
-		actionCreateTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_new_table.png"), "Create &table", self.createTable)
-		self.menuTable.addSeparator()
-		actionEditTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_edit_table.png"),"&Edit table", self.editTable)
-		actionVacuumAnalyze = self.menuTable.addAction("Run VACUUM &ANALYZE", self.vacuumAnalyze)
-		self.menuMoveToSchema = self.menuTable.addMenu("Move to &schema")
-		self.connect(self.menuMoveToSchema, SIGNAL("aboutToShow()"), self.prepareMenuMoveToSchema)
-		self.menuTable.addSeparator()
-		actionEmptyTable = self.menuTable.addAction("E&mpty table", self.emptyTable)
-		actionDeleteTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_del_table.png"),"&Delete table/view", self.deleteTable)
-		self.menuTable.addSeparator()
-		self.actionShowReadable = self.menuTable.addAction("Show only readable tables/views", self.refreshTable)
-		self.actionShowReadable.setCheckable(True)
-		self.actionShowReadable.setChecked(True)
+		if not self.mode & self.ModeReadOnly:
+			actionCreateTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_new_table.png"), "Create &table", self.createTable)
+			self.menuTable.addSeparator()
+			actionEditTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_edit_table.png"),"&Edit table", self.editTable)
+			actionVacuumAnalyze = self.menuTable.addAction("Run VACUUM &ANALYZE", self.vacuumAnalyze)
+			self.menuMoveToSchema = self.menuTable.addMenu("Move to &schema")
+			self.connect(self.menuMoveToSchema, SIGNAL("aboutToShow()"), self.prepareMenuMoveToSchema)
+			self.menuTable.addSeparator()
+			actionEmptyTable = self.menuTable.addAction("E&mpty table", self.emptyTable)
+			actionDeleteTable = self.menuTable.addAction(QIcon(":/icons/toolbar/action_del_table.png"),"&Delete table/view", self.deleteTable)
+			self.menuTable.addSeparator()
+		self.actionOnlyReadable = self.menuTable.addAction("Show only readable tables/views", self.showOnlyReadableTables)
+		self.actionOnlyReadable.setCheckable(True)
+		self.actionOnlyReadable.setChecked(True)
 		
 		## MENU Data
 		actionLoadData = self.menuData.addAction("&Load data from shapefile", self.loadData)
@@ -747,9 +767,11 @@ class ManagerWindow(QMainWindow):
 		## menu bar
 		self.menuBar = QMenuBar(self)
 		self.menuBar.addMenu(self.menuDb)
-		self.menuBar.addMenu(self.menuSchema)
+		if not self.mode & self.ModeReadOnly:
+			self.menuBar.addMenu(self.menuSchema)
 		self.menuBar.addMenu(self.menuTable)
-		self.menuBar.addMenu(self.menuData)
+		if not self.mode & self.ModeReadOnly:
+			self.menuBar.addMenu(self.menuData)
 		self.menuBar.addMenu(self.menuHelp)
 		self.setMenuBar(self.menuBar)
 		
@@ -759,19 +781,24 @@ class ManagerWindow(QMainWindow):
 		self.toolBar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
 		self.toolBar.addAction(actionRefresh)
 		self.toolBar.addAction(actionSqlWindow)
-		self.toolBar.addSeparator()
-		self.toolBar.addAction(actionCreateTable)
-		self.toolBar.addAction(actionEditTable)
-		self.toolBar.addAction(actionDeleteTable)
-		self.toolBar.addSeparator()
-		self.toolBar.addAction(actionImportData)
-		self.toolBar.addAction(actionExportData)
+		if not self.mode & self.ModeReadOnly:
+			self.toolBar.addSeparator()
+			self.toolBar.addAction(actionCreateTable)
+			self.toolBar.addAction(actionEditTable)
+			self.toolBar.addAction(actionDeleteTable)
+			self.toolBar.addSeparator()
+			self.toolBar.addAction(actionImportData)
+			self.toolBar.addAction(actionExportData)
 		self.addToolBar(self.toolBar)
 
 		# database actions - enabled only when we're not connected
-		# (menu "move to schema" actually isn't an action... we're abusing python's duck typing :-)
 		self.dbActions = [ actionDbInfo, actionRefresh, actionSqlWindow, actionCreateSchema, actionDeleteSchema,
-			actionCreateTable, actionEditTable, actionVacuumAnalyze, actionEmptyTable, actionDeleteTable,
 			actionLoadData, actionDumpData, actionImportData, actionExportData, actionGeomProcessing,
-			actionVersioning, self.menuMoveToSchema ]
+			actionVersioning, self.actionOnlyReadable ]
+
+		if not self.mode & self.ModeReadOnly:
+			# (menu "move to schema" actually isn't an action... we're abusing python's duck typing :-)
+			defModeActions = [ actionCreateTable, actionEditTable, actionVacuumAnalyze,
+				actionEmptyTable, actionDeleteTable, self.menuMoveToSchema ]
+			self.dbActions.extend( defModeActions )
 		
