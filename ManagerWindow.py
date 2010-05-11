@@ -206,14 +206,21 @@ class ManagerWindow(QMainWindow):
 
 	
 	def updateWindowTitle(self):
+		if not hasattr(self, 'defaultTitle'):
+			self.defaultTitle = self.windowTitle()
+
 		if self.db:
-			self.setWindowTitle("PostGIS Manager - %s - user %s at %s" % (self.db.dbname, self.db.user, self.db.host) )
+			self.setWindowTitle(self.defaultTitle + " - %s - user %s at %s" % (self.db.dbname, self.db.user, self.db.host) )
 		else:
-			self.setWindowTitle("PostGIS Manager")
+			self.setWindowTitle(self.defaultTitle)
 		
 		
 	def tabChanged(self, tabIndex):
 		""" another tab has been selected: update its contents """
+
+		self.tabs.setTabEnabled(1, self.currentView == ManagerWindow.ViewTable)
+		if self.useQgis:
+			self.tabs.setTabEnabled(2, self.currentView == ManagerWindow.ViewTable and self.currentHasGeometry)
 
 		if tabIndex == 0 and self.dirtyMetadata:
 			# update the metadata
@@ -402,6 +409,8 @@ class ManagerWindow(QMainWindow):
 		# the same table?
 		if self.table.model() and self.table.model().table == item.name and self.table.model().schema == item.schema().name:
 			return
+
+		QApplication.setOverrideCursor(QCursor(Qt.WaitCursor))
 		
 		# if the real row count is not calculated yet, find out now!
 		if item.row_count_real == -1:
@@ -410,12 +419,15 @@ class ManagerWindow(QMainWindow):
 				self.updateMetadata()
 			except postgis_utils.DbError, e:
 				self.unloadDbTable() # unable to load the table!
+				QApplication.restoreOverrideCursor()
 				return
 		
 		newModel = DbTableModel(self.db, item.schema().name, item.name, item.row_count_real)
 		self.table.setModel(newModel)
 		del self.tableModel # ensure that old model gets deleted
 		self.tableModel = newModel
+
+		QApplication.restoreOverrideCursor()
 
 		self.dirtyTable = False
 		
