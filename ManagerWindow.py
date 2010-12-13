@@ -563,10 +563,13 @@ class ManagerWindow(QMainWindow):
 	def createSchema(self):
 		
 		(name, ok) = QInputDialog.getText(self, "Schema name", "Enter name for new schema")
-		if not name.isEmpty():
-			self.db.create_schema(name)
-			self.refreshTable()
-			QMessageBox.information(self, "good", "schema created.")
+		try:
+			if not name.isEmpty():
+				self.db.create_schema(name)
+				self.refreshTable()
+				QMessageBox.information(self, "good", "schema created.")
+		except postgis_utils.DbError, e:
+			DlgDbError.showError(e, self)
 
 	
 	def deleteSchema(self):
@@ -677,7 +680,7 @@ class ManagerWindow(QMainWindow):
 	def sqlWindow(self):
 		""" show sql window """
 		dlg = DlgSqlWindow(self, self.db)
-		dlg.exec_()
+		dlg.show()
 	
 	def enableGui(self, connected):
 		""" enable / disable various actions depending whether we're connected or not """
